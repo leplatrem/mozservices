@@ -1,3 +1,10 @@
+0.10 - unreleased
+=================
+
+**New features**
+
+- new logging formatter ``mozsvc.util.MozLogFormatter`` to produce MozLog v2 output (#37)
+
 0.9
 ===
 

@@ -124,15 +124,8 @@ class JsonLogFormatter(logging.Formatter):
         "hostname": socket.gethostname(),
     }
 
-    def format(self, record):
-        # Take default values from the record and the environment.
-        details = self.DEFAULT_DETAILS.copy()
-        details.update({
-            "op": record.name,
-            "name": record.name,
-            "time": datetime.utcfromtimestamp(record.created).isoformat()+"Z",
-            "pid": record.process,
-        })
+    def _extract_details(self, record):
+        details = {}
         # Include any custom attributes set on the record.
         # These would usually be collected metrics data.
         for key, value in record.__dict__.iteritems():
@@ -148,6 +141,71 @@ class JsonLogFormatter(logging.Formatter):
         if record.exc_info is not None:
             details["error"] = repr(record.exc_info[1])
             details["traceback"] = safer_format_traceback(*record.exc_info)
+        return details
+
+    def format(self, record):
+        # Take default values from the record and the environment.
+        details = self.DEFAULT_DETAILS.copy()
+        details.update({
+            "op": record.name,
+            "name": record.name,
+            "time": datetime.utcfromtimestamp(record.created).isoformat()+"Z",
+            "pid": record.process,
+        })
+        details.update(self._extract_details(record))
+        return json.dumps(details)
+
+
+class MozLogFormatter(JsonLogFormatter):
+    DEFAULT_DETAILS = {
+        "EnvVersion": 2,
+        "Hostname": socket.gethostname(),
+    }
+
+    def format(self, record):
+        # Extract application name and event type from logger name.
+        # e,g syncstorage.views.auth -> "syncstorage", "views.auth"
+        try:
+            appname, event = record.name.split(".", 1)
+        except:
+            appname = record.name
+            event = record.levelname.lower()
+
+        # Event timestamp in nanosecond epoch.
+        SEC_TO_NANOSEC = 10**9
+        timestamp = int(record.created * SEC_TO_NANOSEC)
+
+        # Syslog Message Severities
+        # https://tools.ietf.org/html/rfc5424#section-6.2.1
+        # 0: Emergency: system is unusable
+        # 1: Alert: action must be taken immediately
+        # 2: Critical: critical conditions
+        # 3: Error: error conditions
+        # 4: Warning: warning conditions
+        # 5: Notice: normal but significant condition
+        # 6: Informational: informational messages
+        # 7: Debug: debug-level messages
+        SYSLOG_LEVELS = {
+            'fatal': 0,
+            'critical': 2,
+            'exception': 3,
+            'error': 3,
+            'warning': 4,
+            'info': 6,
+            'debug': 7,
+        }
+        severity = SYSLOG_LEVELS[record.levelname.lower()]
+
+        # Take default values from the record and the environment.
+        details = self.DEFAULT_DETAILS.copy()
+        details.update({
+            'Fields': self._extract_details(record),
+            "Logger": appname,
+            "Pid": record.process,
+            "Severity": severity,
+            "Timestamp": timestamp,
+            'Type': event,
+        })
         return json.dumps(details)
 
 
